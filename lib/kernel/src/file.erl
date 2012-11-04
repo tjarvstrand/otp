@@ -1345,7 +1345,9 @@ path_open_first([Path|Rest], Name, Mode, LastError) ->
 	    case open(FileName, Mode) of
 		{ok, Fd} ->
 		    {ok, Fd, FileName};
-		{error, enoent} ->
+		{error, Err} when Err =:= enoent orelse
+                                  Err =:= enotdir orelse
+                                  Err =:= eisdir ->
 		    path_open_first(Rest, Name, Mode, LastError);
 		Error ->
 		    Error

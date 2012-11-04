@@ -638,42 +638,51 @@ path_open(suite) -> [];
 path_open(doc) -> [];
 path_open(Config) when is_list(Config) ->
     ?line Dog = test_server:timetrap(test_server:seconds(5)),
-    ?line RootDir = ?config(priv_dir,Config),
-    ?line NewDir = filename:join(RootDir, 
-				 atom_to_list(?MODULE)
-				 ++"_path_open"),
-    ?line ok = ?FILE_MODULE:make_dir(NewDir),
-    ?line FileName = "path_open.fil",
-    ?line Name = filename:join(RootDir, FileName),
-    ?line {ok,Fd1,_FullName1} =
-	?FILE_MODULE:path_open(
-	  [RootDir,
-	   "nosuch1",
-	   NewDir],FileName,write),
+
+    %% Construct filenames
+    ?line RootDir  = ?config(priv_dir,Config),
+    ?line DirName1 = atom_to_list(?MODULE) ++ "_path_open_1",
+    ?line DirName2 = atom_to_list(?MODULE) ++ "_path_open_2",
+    ?line DirName3 = atom_to_list(?MODULE) ++ "_path_open_3",
+    ?line DirPath1 = filename:join(RootDir,DirName1),
+    ?line DirPath2 = filename:join(DirPath1,DirName2),
+    ?line DirPath3 = filename:join(DirPath2,DirName3),
+    ?line RelFile  = filename:join(DirName2,"path_open.fil"),
+    ?line AbsFile  = filename:join(DirPath1,RelFile),
+
+    %% Setup file tree.
+    ?line ok = ?FILE_MODULE:make_dir(DirPath1),
+    ?line ok = ?FILE_MODULE:make_dir(DirPath2),
+    % Create a dummy dir to ensure that path_open handles eisdir return value.
+    ?line ok = ?FILE_MODULE:make_dir(DirPath3),
+    ?line ok = ?FILE_MODULE:make_dir(filename:join(DirPath3, DirName2)),
+    ?line ok = ?FILE_MODULE:make_dir(filename:join(DirPath3, RelFile)),
+    % Write a dummy file to ensure that path_open handles enotdir return value.
+    ?line ok = ?FILE_MODULE:write_file(filename:join(RootDir,DirName2), "foo"),
+
+    %% Open file using relative path and check that the opened path is AbsFile.
+    ?line Paths1 = [RootDir,"nosuch1",DirPath3, DirPath1],
+    ?line {ok,Fd1,AbsFile} = ?FILE_MODULE:path_open(Paths1,RelFile,write),
     ?line io:format(Fd1,"ABCDEFGH",[]),
     ?line ok = ?FILE_MODULE:close(Fd1),
 
     %% locate it in the last dir
-    ?line {ok,Fd2,_FullName2} =
-	?FILE_MODULE:path_open(
-	  ["nosuch1",
-	   NewDir,
-	   RootDir],FileName,read),
-    ?line {ok,2} = 
-	?FILE_MODULE:position(Fd2,2), "C" = io:get_chars(Fd2,'',1),
+    ?line Paths2 = ["nosuch1",DirPath1,RootDir],
+    ?line {ok,Fd2,AbsFile} = ?FILE_MODULE:path_open(Paths2,RelFile,read),
+    ?line {ok,2} = ?FILE_MODULE:position(Fd2,2),
+    ?line "C" = io:get_chars(Fd2,'',1),
     ?line ok = ?FILE_MODULE:close(Fd2),
+
     %% Try a failing path
-    ?line {error, enoent} = ?FILE_MODULE:path_open(
-			      ["nosuch1",
-			       NewDir],FileName,read),
+    ?line Paths3 = ["nosuch1", DirPath2],
+    ?line {error, enoent} = ?FILE_MODULE:path_open(Paths3, RelFile, read),
+
     %% Check that it's found regardless of path, if an absolute name given
-    ?line {ok,Fd3,_FullPath3} =
-	?FILE_MODULE:path_open(
-	  ["nosuch1",
-	   NewDir],Name,read),
-    ?line {ok,2} = 
-	?FILE_MODULE:position(Fd3,2), "C" = io:get_chars(Fd3,'',1),
-    ?line ok = ?FILE_MODULE:close(Fd3),
+    ?line Paths4 = ["nosuch1",DirPath2],
+    ?line {ok,Fd4,AbsFile} = ?FILE_MODULE:path_open(Paths4,AbsFile,read),
+    ?line {ok,2} = ?FILE_MODULE:position(Fd4,2),
+    ?line "C" = io:get_chars(Fd4,'',1),
+    ?line ok = ?FILE_MODULE:close(Fd4),
 
     ?line [] = flush(),
     ?line test_server:timetrap_cancel(Dog),
