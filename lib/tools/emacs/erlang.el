@@ -1121,8 +1121,15 @@ This must be placed in front of `erlang-font-lock-keywords-vars'.")
 
 (defvar erlang-font-lock-keywords-vars
   (list
-   (list (concat "[^#]" erlang-variable-regexp)	; no numerical constants
-	 1 'font-lock-variable-name-face))
+   (list
+    #'(lambda (max)
+        (let ((match nil)
+              (re erlang-variable-regexp))
+          (while (and (null match) (re-search-forward re max 'move-point))
+            (unless (eq ?# (char-before (match-beginning 0)))
+              (setq match (match-end 0))))
+          match))
+    1 'font-lock-variable-name-face t))
   "Font lock keyword highlighting Erlang variables.
 Must be preceded by `erlang-font-lock-keywords-macros' to work properly.")
 
