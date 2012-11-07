@@ -1126,6 +1126,7 @@ This must be placed in front of `erlang-font-lock-keywords-vars'.")
         (let ((match nil)
               (re erlang-variable-regexp))
           (while (and (null match) (re-search-forward re max 'move-point))
+            ;; no numerical constants
             (unless (eq ?# (char-before (match-beginning 0)))
               (setq match (match-end 0))))
           match))
