@@ -121,7 +121,9 @@ value_option(Flag, Default, On, OnVal, Off, OffVal, Opts) ->
 	       specs = dict:new()	:: dict(),	%Type specifications
 	       callbacks = dict:new()   :: dict(),      %Callback types
 	       types = dict:new()	:: dict(),	%Type definitions
-	       exp_types=gb_sets:empty():: gb_set()	%Exported types
+	       exp_types=gb_sets:empty():: gb_set(),	%Exported types
+               % {Public, Restricted, Internal}
+               access_decls = [] :: [{fa(), public | restricted | private}]
               }).
 
 -type lint_state() :: #lint{}.
@@ -182,6 +184,10 @@ format_error(export_all) ->
     "export_all flag enabled - all functions will be exported";
 format_error({duplicated_export, {F,A}}) ->
     io_lib:format("function ~w/~w already exported", [F,A]);
+format_error({bad_access_decl, D}) ->
+    io_lib:format("bad function in access declaration: ~w", [D]);
+format_error({duplicated_access_decl, {F,A}}) ->
+    io_lib:format("access level for ~w/~w already declared", [F,A]);
 format_error({unused_import,{{F,A},M}}) ->
     io_lib:format("import ~w:~w/~w is unused", [M,F,A]);
 format_error({undefined_function,{F,A}}) ->
@@ -692,6 +698,10 @@ attribute_state({attribute,L,callback,{Fun,Types}}, St) ->
     callback_decl(L, Fun, Types, St);
 attribute_state({attribute,L,on_load,Val}, St) ->
     on_load(L, Val, St);
+attribute_state({attribute,L,Lvl,Fs}, St) when Lvl =:= public orelse
+                                               Lvl =:= restricted orelse
+                                               Lvl =:= private ->
+    access_decl(Lvl, L, Fs, St);
 attribute_state({attribute,_L,_Other,_Val}, St) -> % Ignore others
     St;
 attribute_state(Form, St) ->
@@ -1121,6 +1131,21 @@ export(Line, Es, #lint{exports = Es0, called = Called} = St0) ->
               end,
               {Es0,Called,St0}, Es),
     St1#lint{exports = Es1, called = C1}.
+
+access_decl(Lvl, Line, Ds, St0) ->
+    foldl(fun ({M, A} = D, St1) when is_atom(M), is_integer(A), A >= 0 ->
+                  St2 =
+                      case lists:keyfind(D, 1, St1#lint.access_decls) of
+                          false ->
+                              St1;
+                          {D, _Lvl} ->
+                              add_warning(Line, {duplicated_access_decl, D}, St1)
+                      end,
+                  St2#lint{access_decls = [{D, Lvl}|St1]};
+              (D, St1) ->
+                  add_error(Line, {bad_access_decl, D}, St1)
+          end, St0, Ds).
+
 
 -spec export_type(line(), [ta()], lint_state()) -> lint_state().
 %%  Mark types as exported; also mark them as used from the export line.
