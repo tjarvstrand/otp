@@ -184,10 +184,12 @@ format_error(export_all) ->
     "export_all flag enabled - all functions will be exported";
 format_error({duplicated_export, {F,A}}) ->
     io_lib:format("function ~w/~w already exported", [F,A]);
+format_error({duplicated_export_by_access_decl, {F,A}}) ->
+    io_lib:format("function ~w/~w already exported by access declaration", [F,A]);
 format_error({bad_access_decl, D}) ->
     io_lib:format("bad function in access declaration: ~w", [D]);
 format_error({duplicated_access_decl, {F,A}}) ->
-    io_lib:format("access level for ~w/~w already declared", [F,A]);
+    io_lib:format("Redeclaring access level for ~w/~w", [F,A]);
 format_error({unused_import,{{F,A},M}}) ->
     io_lib:format("import ~w:~w/~w is unused", [M,F,A]);
 format_error({undefined_function,{F,A}}) ->
@@ -1119,31 +1121,44 @@ check_callback_information(#lint{callbacks = Callbacks,
 
 export(Line, Es, #lint{exports = Es0, called = Called} = St0) ->
     {Es1,C1,St1} =
-        foldl(fun (NA, {E,C,St2}) ->
+        foldl(fun (NA, {E,C,#lint{access_decls = A} = St2}) ->
                       St = case gb_sets:is_element(NA, E) of
                                true ->
-                                   Warn = {duplicated_export,NA},
-                                   add_warning(Line, Warn, St2);
+                                   W1 = {duplicated_export, NA},
+                                   add_warning(Line, W1, St2);
                                false ->
-                                   St2
+                                   W2 = {duplicated_export_by_access_decl, NA},
+                                   case lists:keymember(NA, 1, A) of
+                                       false ->
+                                           St2;
+                                       true ->
+                                           add_warning(Line, W2, St2)
+                                   end
                            end,
                       {gb_sets:add_element(NA, E), [{NA,Line}|C], St}
               end,
               {Es0,Called,St0}, Es),
     St1#lint{exports = Es1, called = C1}.
 
-access_decl(Lvl, Line, Ds, St0) ->
+access_decl(Lvl, Lin, Ds, St0) ->
     foldl(fun ({M, A} = D, St1) when is_atom(M), is_integer(A), A >= 0 ->
                   St2 =
-                      case lists:keyfind(D, 1, St1#lint.access_decls) of
+                      case lists:keymember(D, 1, St1#lint.access_decls) of
                           false ->
                               St1;
-                          {D, _Lvl} ->
-                              add_warning(Line, {duplicated_access_decl, D}, St1)
+                          true ->
+                              add_error(Lin, {duplicated_access_decl, D}, St1)
                       end,
-                  St2#lint{access_decls = [{D, Lvl}|St1]};
+                  St3 =
+                      case gb_sets:is_element(D, St1#lint.exports) of
+                          false -> St2;
+                          true  ->
+                              Warn = {duplicated_export, D},
+                              add_warning(Lin, Warn, St2)
+                      end,
+                  St3#lint{access_decls = [{D, Lvl}|St3#lint.access_decls]};
               (D, St1) ->
-                  add_error(Line, {bad_access_decl, D}, St1)
+                  add_error(Lin, {bad_access_decl, D}, St1)
           end, St0, Ds).
 
 
