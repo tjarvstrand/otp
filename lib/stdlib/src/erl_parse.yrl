@@ -696,6 +696,14 @@ build_attribute({atom,La,file}, Val) ->
 	    {attribute,La,file,{Name,Line}};
 	_Other -> error_bad_decl(La, file)
     end;
+build_attribute({atom,La,domain}, Val) ->
+    case Val of
+        [{atom, _, Domain}] ->
+            {attribute,La,domain,Domain};
+	[{atom, _, Domain}, ExpList] ->
+	    {attribute,La,Domain,farity_list(ExpList)};
+	_Other -> error_bad_decl(La, domain)
+    end;
 build_attribute({atom,La,Attr}, Val) ->
     case Val of
 	[Expr0] ->
