@@ -868,7 +868,8 @@ do_add_module(S, XMod, Unres, Data) ->
 %%do_add_module(S, M, _XMod, _Unres, Data)->
 %%    {ok, M, [], S};
 do_add_module(S, M, XMod, Unres0, Data) when S#xref.mode =:= functions ->
-    {DefAt0, LPreCAt0, XPreCAt0, LC0, XC0, X0, Attrs, Depr} = Data,
+    {DefAt0, LPreCAt0, XPreCAt0, LC0, XC0, X0, Attrs, Depr, DomainInfo} = Data,
+    {Public, Restricted, Private} = DomainInfo,
     %% Bad is a list of bad values of 'xref' attributes.
     {ALC0,AXC0,Bad0} = Attrs,
     FT = [tspec(func)],
@@ -899,6 +900,9 @@ do_add_module(S, M, XMod, Unres0, Data) when S#xref.mode =:= functions ->
     %% Local and exported functions with no definitions are removed.
     L = difference(DefinedFuns, X1),
     X = difference(DefinedFuns, L),
+    PubX   = intersection(xref_utils:xset(Public,     FT), X),
+    RestrX = intersection(xref_utils:xset(Restricted, FT), X),
+    PrivX  = intersection(xref_utils:xset(Private,    FT), X),
     XC = union(XC1, AXC),
     LC = union(LC1, ALC),
 
@@ -910,10 +914,10 @@ do_add_module(S, M, XMod, Unres0, Data) when S#xref.mode =:= functions ->
     {EE, ECallAt} =
 	xref_utils:subprocess(Fun, [link, {min_heap_size,100000}]),
 
-    [DefAt2,L2,X2,LCallAt2,XCallAt2,CallAt2,LC2,XC2,EE2,ECallAt2,
-     DF2,DF_12,DF_22,DF_32] =
-	pack([DefAt,L,X,LCallAt,XCallAt,CallAt,LC,XC,EE,ECallAt,
-              DF1,DF_11,DF_21,DF_31]),
+    [DefAt2,L2,X2,PubX2,RestrX2,PrivX2,LCallAt2,XCallAt2,CallAt2,LC2,XC2,EE2,
+     ECallAt2,DF2,DF_12,DF_22,DF_32] =
+	pack([DefAt,L,X,PubX,RestrX,PrivX,LCallAt,XCallAt,CallAt,LC,XC,EE,
+              ECallAt,DF1,DF_11,DF_21,DF_31]),
 
     %% Foo = [DefAt2,L2,X2,LCallAt2,XCallAt2,CallAt2,LC2,XC2,EE2,ECallAt2,
     %%        DF2,DF_12,DF_22,DF_32],
@@ -924,8 +928,8 @@ do_add_module(S, M, XMod, Unres0, Data) when S#xref.mode =:= functions ->
     LPredefined = predefined_funs(LU),
 
     MS = xref_utils:xset(M, atom),
-    T = from_sets({MS,DefAt2,L2,X2,LCallAt2,XCallAt2,CallAt2,
-		   LC2,XC2,LU,EE2,ECallAt2,Unres,LPredefined,
+    T = from_sets({MS,DefAt2,L2,X2,PubX2,RestrX2,PrivX2,LCallAt2,XCallAt2,
+		   CallAt2,LC2,XC2,LU,EE2,ECallAt2,Unres,LPredefined,
                    DF2,DF_12,DF_22,DF_32}),
 
     NoUnres = XMod#xref_mod.no_unresolved,
@@ -1175,9 +1179,9 @@ do_set_up(S, VerboseOpt) ->
 %% B is also partial.
 do_set_up(S) when S#xref.mode =:= functions ->
     ModDictList = dict:to_list(S#xref.modules),
-    [DefAt0, L, X0, LCallAt, XCallAt, CallAt, LC, XC, LU,
-     EE0, ECallAt, UC, LPredefined,
-     Mod_DF,Mod_DF_1,Mod_DF_2,Mod_DF_3] = make_families(ModDictList, 18),
+    [DefAt0, L, X0, XPub, XRestr, XPriv, LCallAt, XCallAt, CallAt, LC, XC,
+      LU, EE0, ECallAt, UC, LPredefined,
+     Mod_DF,Mod_DF_1,Mod_DF_2,Mod_DF_3] = make_families(ModDictList, 21),
 
     {XC_1, XU, XPredefined} = do_set_up_1(XC),
     LC_1 = user_family(union_of_family(LC)),
@@ -1262,7 +1266,8 @@ do_set_up(S) when S#xref.mode =:= functions ->
     ?FORMAT("EE=~p~nEE_1=~p~nECallAt=~p~n", [EE, EE_1, ECallAt]),
     ?FORMAT("DF=~p~nDF_1=~p~nDF_2=~p~nDF_3=~p~n", [DF, DF_1, DF_2, DF_3]),
 
-    Vs = [{'L',L}, {'X',X},{'F',F},{'U',U},{'B',B},{'UU',UU},
+    Vs = [{'L',L}, {'X',X},{'XPub',XPub},{'XRestr',XRestr},{'XPriv',XPriv},
+          {'F',F},{'U',U},{'B',B},{'UU',UU},
 	  {'XU',XU},{'LU',LU},{'V',V},{v,V},
 	  {'LC',{LC,LC_1}},{'XC',{XC,XC_1}},{'E',{E,E_1}},{e,{E,E_1}},
 	  {'EE',{EE,EE_1}},{'UC',{UC,UC_1}},
@@ -1340,34 +1345,37 @@ do_finish_set_up([{Key, Value} | Vs], T) ->
 do_finish_set_up([], T) ->
     T.
 
-var_type('B')    -> {function, vertex};
-var_type('F')    -> {function, vertex};
-var_type('L')    -> {function, vertex};
-var_type('LU')   -> {function, vertex};
-var_type('U')    -> {function, vertex};
-var_type('UU')   -> {function, vertex};
-var_type('V')    -> {function, vertex};
-var_type('X')    -> {function, vertex};
-var_type('XU')   -> {function, vertex};
-var_type('DF')   -> {function, vertex};
-var_type('DF_1') -> {function, vertex};
-var_type('DF_2') -> {function, vertex};
-var_type('DF_3') -> {function, vertex};
-var_type('A')    -> {application, vertex};
-var_type('AM')   -> {module, vertex};
-var_type('LM')   -> {module, vertex};
-var_type('M')    -> {module, vertex};
-var_type('UM')   -> {module, vertex};
-var_type('R')    -> {release, vertex};
-var_type('E')    -> {function, edge};
-var_type('EE')   -> {function, edge};
-var_type('LC')   -> {function, edge};
-var_type('UC')   -> {function, edge};
-var_type('XC')   -> {function, edge};
-var_type('AE')   -> {application, edge};
-var_type('ME')   -> {module, edge};
-var_type('RE')   -> {release, edge};
-var_type(_)      -> {foo, bar}.
+var_type('B')      -> {function, vertex};
+var_type('F')      -> {function, vertex};
+var_type('L')      -> {function, vertex};
+var_type('LU')     -> {function, vertex};
+var_type('U')      -> {function, vertex};
+var_type('UU')     -> {function, vertex};
+var_type('V')      -> {function, vertex};
+var_type('X')      -> {function, vertex};
+var_type('XPub')   -> {function, vertex};
+var_type('XRestr') -> {function, vertex};
+var_type('XPriv')  -> {function, vertex};
+var_type('XU')     -> {function, vertex};
+var_type('DF')     -> {function, vertex};
+var_type('DF_1')   -> {function, vertex};
+var_type('DF_2')   -> {function, vertex};
+var_type('DF_3')   -> {function, vertex};
+var_type('A')      -> {application, vertex};
+var_type('AM')     -> {module, vertex};
+var_type('LM')     -> {module, vertex};
+var_type('M')      -> {module, vertex};
+var_type('UM')     -> {module, vertex};
+var_type('R')      -> {release, vertex};
+var_type('E')      -> {function, edge};
+var_type('EE')     -> {function, edge};
+var_type('LC')     -> {function, edge};
+var_type('UC')     -> {function, edge};
+var_type('XC')     -> {function, edge};
+var_type('AE')     -> {application, edge};
+var_type('ME')     -> {module, edge};
+var_type('RE')     -> {release, edge};
+var_type(_)        -> {foo, bar}.
 
 make_families(ModDictList, N) ->
     Fun1 = fun({_,XMod}) -> XMod#xref_mod.data end,

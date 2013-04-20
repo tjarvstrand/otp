@@ -59,20 +59,58 @@
 module(Module, Forms, CollectBuiltins, X, DF) ->
     Attrs = [{Attr,V} || {attribute,_Line,Attr,V} <- Forms],
     IsAbstract = xref_utils:is_abstract_module(Attrs),
-    S = #xrefr{module = Module, builtins_too = CollectBuiltins,
+    S0 = #xrefr{module = Module, builtins_too = CollectBuiltins,
                is_abstr = IsAbstract, x = X, df = DF},
-    forms(Forms, S).
+    S = forms(Forms, S0),
+    DomainInfo = domain_info(Attrs, S), % {Public, Restricted, Private}
+    format_return(S, DomainInfo).
 
-forms([F | Fs], S) ->
-    S1 = form(F, S),
-    forms(Fs, S1);
-forms([], S) ->
-    #xrefr{module = M, def_at = DefAt,
-	   l_call_at = LCallAt, x_call_at = XCallAt,
-	   el = LC, ex = XC, x = X, df = Depr,
-	   lattrs = AL, xattrs = AX, battrs = B, unresolved = U} = S,
+format_return(S, DomainInfo) ->
+    #xrefr{module = M,
+           def_at = DefAt,
+	   l_call_at = LCallAt,
+           x_call_at = XCallAt,
+	   el = LC,
+           ex = XC,
+           x = X,
+           df = Depr,
+	   lattrs = AL,
+           xattrs = AX,
+           battrs = B,
+           unresolved = U} = S,
     Attrs = {lists:reverse(AL), lists:reverse(AX), lists:reverse(B)},
-    {ok, M, {DefAt, LCallAt, XCallAt, LC, XC, X, Attrs, Depr}, U}.
+    {ok, M, {DefAt, LCallAt, XCallAt, LC, XC, X, Attrs, Depr, DomainInfo}, U}.
+
+domain_info(Attrs, #xrefr{module = M, x = X}) ->
+    ModDomain    = domain_from_attrs(Attrs),
+    PublicFs     = [{M, module_info, 0}, {M, module_info, 1}] ++
+                   lists:append([fas2mfas(M, Fs) || {public, Fs} <- Attrs]),
+    RestrictedFs = lists:append([fas2mfas(M, Fs) || {restricted, Fs} <- Attrs]),
+    PrivateFs    = lists:append([fas2mfas(M, Fs) || {private,    Fs} <- Attrs]),
+
+    XSet          = gb_sets:from_list(X),
+    DeclaredFsSet = gb_sets:from_list(PublicFs ++ RestrictedFs ++ PrivateFs),
+    UndeclaredFs  = gb_sets:to_list(gb_sets:subtract(XSet, DeclaredFsSet)),
+    case ModDomain of
+        public     -> {PublicFs ++ UndeclaredFs, RestrictedFs, PrivateFs};
+        restricted -> {PublicFs, RestrictedFs ++ UndeclaredFs, PrivateFs};
+        private    -> {PublicFs, RestrictedFs, PrivateFs ++ UndeclaredFs}
+    end.
+
+fas2mfas(M, Fas) -> [{M, F, A} || {F, A} <- Fas].
+
+domain_from_attrs(Attrs) ->
+    case lists:keyfind(domain, 1, Attrs) of
+        {domain, Domain} when Domain =:= public;
+                              Domain =:= restricted;
+                              Domain =:= private ->
+            Domain;
+        _ ->
+            restricted
+    end.
+
+forms([F | Fs], S) -> forms(Fs, form(F, S));
+forms([], S)       -> S.
 
 form({attribute, Line, xref, Calls}, S) -> % experimental
     #xrefr{module = M, function = Fun,
