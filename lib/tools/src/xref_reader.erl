@@ -101,11 +101,11 @@ fas2mfas(M, Fas) -> [{M, F, A} || {F, A} <- Fas].
 
 domain_from_attrs(Attrs) ->
     case lists:keyfind(domain, 1, Attrs) of
-        {domain, Domain} when Domain =:= public;
-                              Domain =:= restricted;
-                              Domain =:= private ->
+        {domain, [Domain]} when Domain =:= public;
+                                Domain =:= restricted;
+                                Domain =:= private ->
             Domain;
-        _ ->
+        false ->
             restricted
     end.
 
