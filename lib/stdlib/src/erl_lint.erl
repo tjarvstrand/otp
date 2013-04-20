@@ -122,8 +122,10 @@ value_option(Flag, Default, On, OnVal, Off, OffVal, Opts) ->
 	       callbacks = dict:new()   :: dict(),      %Callback types
 	       types = dict:new()	:: dict(),	%Type definitions
 	       exp_types=gb_sets:empty():: gb_set(),	%Exported types
-               % {Public, Restricted, Internal}
-               access_decls = [] :: [{fa(), public | restricted | private}]
+               mod_domain :: public | restricted | private,
+               public_decls = dict:new() :: dict(),
+               restricted_decls = dict:new() :: dict(),
+               private_decls = dict:new() :: dict()
               }).
 
 -type lint_state() :: #lint{}.
@@ -184,12 +186,16 @@ format_error(export_all) ->
     "export_all flag enabled - all functions will be exported";
 format_error({duplicated_export, {F,A}}) ->
     io_lib:format("function ~w/~w already exported", [F,A]);
-format_error({duplicated_export_by_access_decl, {F,A}}) ->
-    io_lib:format("function ~w/~w already exported by access declaration", [F,A]);
-format_error({bad_access_decl, D}) ->
-    io_lib:format("bad function in access declaration: ~w", [D]);
-format_error({duplicated_access_decl, {F,A}}) ->
-    io_lib:format("Redeclaring access level for ~w/~w", [F,A]);
+format_error({duplicated_export_by_domain_decl, {F,A}}) ->
+    io_lib:format("function ~w/~w already exported by domain declaration", [F,A]);
+format_error({bad_domain_decl, D}) ->
+    io_lib:format("bad domain: ~w", [D]);
+format_error({duplicated_domain_decl, {F,A}}) ->
+    io_lib:format("redeclaring domain of ~w/~w", [F,A]);
+format_error(duplicated_domain_decl) ->
+    "redeclaring module domain";
+format_error({redundant_domain_decl, D}) ->
+    io_lib:format("redundant domain domain declaration: ~w", [D]);
 format_error({unused_import,{{F,A},M}}) ->
     io_lib:format("import ~w:~w/~w is unused", [M,F,A]);
 format_error({undefined_function,{F,A}}) ->
@@ -700,10 +706,12 @@ attribute_state({attribute,L,callback,{Fun,Types}}, St) ->
     callback_decl(L, Fun, Types, St);
 attribute_state({attribute,L,on_load,Val}, St) ->
     on_load(L, Val, St);
-attribute_state({attribute,L,Lvl,Fs}, St) when Lvl =:= public orelse
-                                               Lvl =:= restricted orelse
-                                               Lvl =:= private ->
-    access_decl(Lvl, L, Fs, St);
+attribute_state({attribute,L,Domain,Fs}, St) when Domain =:= public;
+                                                  Domain =:= restricted;
+                                                  Domain =:= private ->
+    domain_decl(Domain, L, Fs, St);
+attribute_state({attribute,L,domain,Domain}, St) ->
+    domain_decl(Domain, L, St);
 attribute_state({attribute,_L,_Other,_Val}, St) -> % Ignore others
     St;
 attribute_state(Form, St) ->
@@ -797,7 +805,8 @@ post_traversal_check(Forms, St0) ->
     StD = check_on_load(StC),
     StE = check_unused_records(Forms, StD),
     StF = check_local_opaque_types(StE),
-    check_callback_information(StF).
+    StG = check_domain_declarations(StF),
+    check_callback_information(StG).
 
 %% check_behaviour(State0) -> State
 %% Check that the behaviour attribute is valid.
@@ -981,8 +990,12 @@ check_unused_functions(Forms, St0) ->
             func_line_warning(unused_function, Bad, St1)
     end.
 
-initially_reached(#lint{exports=Exp,on_load=OnLoad}) ->
-    OnLoad ++ gb_sets:to_list(Exp).
+initially_reached(#lint{exports=Exp,on_load=OnLoad} = St) ->
+    Dicts = [St#lint.public_decls,
+             St#lint.private_decls,
+             St#lint.restricted_decls],
+    DomainDeclared = lists:append([dict:fetch_keys(Dict) || Dict <- Dicts]),
+    OnLoad ++ gb_sets:to_list(Exp) ++ DomainDeclared.
 
 %% reached_functions(RootSet, CallRef) -> [ReachedFunc].
 %% reached_functions(RootSet, CallRef, [ReachedFunc]) -> [ReachedFunc].
@@ -1121,18 +1134,16 @@ check_callback_information(#lint{callbacks = Callbacks,
 
 export(Line, Es, #lint{exports = Es0, called = Called} = St0) ->
     {Es1,C1,St1} =
-        foldl(fun (NA, {E,C,#lint{access_decls = A} = St2}) ->
+        foldl(fun (NA, {E,C,St2}) ->
                       St = case gb_sets:is_element(NA, E) of
                                true ->
                                    W1 = {duplicated_export, NA},
                                    add_warning(Line, W1, St2);
                                false ->
-                                   W2 = {duplicated_export_by_access_decl, NA},
-                                   case lists:keymember(NA, 1, A) of
-                                       false ->
-                                           St2;
-                                       true ->
-                                           add_warning(Line, W2, St2)
+                                   W2 = {duplicated_export_by_domain_decl, NA},
+                                   case domain_declared_p(NA, St2) of
+                                       false -> St2;
+                                       true  -> add_warning(Line, W2, St2)
                                    end
                            end,
                       {gb_sets:add_element(NA, E), [{NA,Line}|C], St}
@@ -1140,27 +1151,72 @@ export(Line, Es, #lint{exports = Es0, called = Called} = St0) ->
               {Es0,Called,St0}, Es),
     St1#lint{exports = Es1, called = C1}.
 
-access_decl(Lvl, Lin, Ds, St0) ->
-    foldl(fun ({M, A} = D, St1) when is_atom(M), is_integer(A), A >= 0 ->
-                  St2 =
-                      case lists:keymember(D, 1, St1#lint.access_decls) of
-                          false ->
-                              St1;
-                          true ->
-                              add_error(Lin, {duplicated_access_decl, D}, St1)
-                      end,
-                  St3 =
-                      case gb_sets:is_element(D, St1#lint.exports) of
-                          false -> St2;
-                          true  ->
-                              Warn = {duplicated_export, D},
-                              add_warning(Lin, Warn, St2)
-                      end,
-                  St3#lint{access_decls = [{D, Lvl}|St3#lint.access_decls]};
-              (D, St1) ->
-                  add_error(Lin, {bad_access_decl, D}, St1)
-          end, St0, Ds).
+domain_decl(Domain, Line, #lint{mod_domain = undefined} = St) ->
+    case is_domain_p(Domain) of
+        true  -> St#lint{mod_domain = Domain};
+        false -> add_error(Line, {bad_domain_decl, Domain}, St)
+    end;
+domain_decl(_Domain, Line, St) ->
+    add_error(Line, duplicated_domain_decl, St).
 
+
+domain_decl(Domain, Line, Ds, St0) when Domain =:= public;
+                                        Domain =:= restricted;
+                                        Domain =:= private ->
+    St = foldl(fun ({M, A} = D, St1) when is_atom(M), is_integer(A), A >= 0 ->
+                       domain_decl_check(Line, D, St1);
+                   (D, St1) ->
+                       add_error(Line, {bad_domain_decl, D}, St1)
+               end, St0, Ds),
+    add_domain_decl(Domain, Line, Ds, St);
+domain_decl(Domain, Line, _Ds, St) ->
+    add_error(Line, {bad_domain_decl, Domain}, St).
+
+is_domain_p(public)     -> true;
+is_domain_p(restricted) -> true;
+is_domain_p(private)    -> true;
+is_domain_p(_)          -> false.
+
+add_domain_decl(public, Line, D, #lint{public_decls = Fs} = St) ->
+    St#lint{public_decls = add_domain_decl(Line, D, Fs)};
+add_domain_decl(restricted, Line, D, #lint{restricted_decls = Fs} = St) ->
+    St#lint{restricted_decls = add_domain_decl(Line, D, Fs)};
+add_domain_decl(private, Line, D, #lint{private_decls = Fs} = St) ->
+    St#lint{private_decls = add_domain_decl(Line, D, Fs)}.
+
+add_domain_decl(Line, Ds, Dict) ->
+    lists:foldl(fun(D, AccDict) -> dict:store(D, Line, AccDict) end, Dict, Ds).
+
+domain_decl_check(Line, D, St0) ->
+    case existing_function_domain_decl_check(Line, D, St0) of
+        St0 -> %% No error
+            St1 = duplicated_domain_decl_check(Line, D, St0),
+            duplicated_export_check(Line, D, St1);
+        St2 -> St2 %% Domain declaration is for a non-existing function
+    end.
+
+existing_function_domain_decl_check(Line, D, St) ->
+    case gb_sets:is_element(D, St#lint.locals) of
+        true  -> St;
+        false -> add_error(Line, {undefined_function, D}, St)
+    end.
+
+duplicated_domain_decl_check(Line, D, St) ->
+    case domain_declared_p(D, St) of
+        false -> St;
+        true -> add_error(Line, {duplicated_domain_decl, D}, St)
+    end.
+
+duplicated_export_check(Line, D, St) ->
+    case gb_sets:is_element(D, St#lint.exports) of
+        false -> St;
+        true  -> add_warning(Line, {duplicated_export, D}, St)
+    end.
+
+domain_declared_p(F, St) ->
+    dict:is_key(F, St#lint.public_decls) orelse
+        dict:is_key(F, St#lint.restricted_decls) orelse
+        dict:is_key(F, St#lint.private_decls).
 
 -spec export_type(line(), [ta()], lint_state()) -> lint_state().
 %%  Mark types as exported; also mark them as used from the export line.
@@ -2855,6 +2911,28 @@ check_local_opaque_types(St) ->
                 end
         end,
     dict:fold(FoldFun, St, Ts).
+
+check_domain_declarations(#lint{mod_domain       = undefined} = St) -> St;
+check_domain_declarations(#lint{mod_domain       = public,
+                                public_decls     = Decls} = St) ->
+    check_redundant_domain_decls(public, Decls, St);
+check_domain_declarations(#lint{mod_domain       = restricted,
+                                restricted_decls = Decls} = St) ->
+    check_redundant_domain_decls(restricted, Decls, St);
+check_domain_declarations(#lint{mod_domain       = private,
+                                private_decls    = Decls} = St) ->
+    check_redundant_domain_decls(private, Decls, St).
+
+check_redundant_domain_decls(Domain, Decls, St) ->
+    case dict:size(Decls) > 0 of
+        true ->
+            Lines   = lists:usort([L || {_Decl, L} <- dict:to_list(Decls)]),
+            Warn    = {redundant_domain_decl, Domain},
+            AddWarn = fun(Line, AccSt) -> add_warning(Line, Warn, AccSt) end,
+            lists:foldl(AddWarn, St, Lines);
+        false -> St
+    end.
+
 
 %% icrt_clauses(Clauses, In, ImportVarTable, State) ->
 %%      {NewVts,State}.

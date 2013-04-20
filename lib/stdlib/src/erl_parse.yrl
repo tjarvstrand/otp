@@ -698,10 +698,17 @@ build_attribute({atom,La,file}, Val) ->
     end;
 build_attribute({atom,La,domain}, Val) ->
     case Val of
-        [{atom, _, Domain}] ->
+        [{atom, _, Domain}] when Domain =:= public;
+                                 Domain =:= restricted;
+                                 Domain =:= protected ->
             {attribute,La,domain,Domain};
-	[{atom, _, Domain}, ExpList] ->
-	    {attribute,La,Domain,farity_list(ExpList)};
+	_Other -> error_bad_decl(La, domain)
+    end;
+build_attribute({atom,La,Domain}, Val) when Domain =:= public;
+                                            Domain =:= restricted;
+                                            Domain =:= private ->
+    case Val of
+	[Fs]   -> {attribute,La,Domain,farity_list(Fs)};
 	_Other -> error_bad_decl(La, domain)
     end;
 build_attribute({atom,La,Attr}, Val) ->
