@@ -195,7 +195,7 @@ format_error({duplicated_domain_decl, {F,A}}) ->
 format_error(duplicated_domain_decl) ->
     "redeclaring module domain";
 format_error({redundant_domain_decl, D}) ->
-    io_lib:format("redundant domain domain declaration: ~w", [D]);
+    io_lib:format("redundant domain declaration: ~w", [D]);
 format_error({unused_import,{{F,A},M}}) ->
     io_lib:format("import ~w:~w/~w is unused", [M,F,A]);
 format_error({undefined_function,{F,A}}) ->
