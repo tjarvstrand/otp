@@ -1119,7 +1119,7 @@ check_callback_information(#lint{callbacks = Callbacks,
 %%  Mark functions as exported, also as called from the export line.
 
 export(Line, Es, St0) ->
-    #lint{exports = Es0, called = Called, domains = DomDecls} = St0,
+    #lint{exports = Es0, called = Called, domains = Domain} = St0,
     {Es1,C1,St1} =
         foldl(fun (NA, {E,C,St2}) ->
                       St = case gb_sets:is_element(NA, E) of
@@ -1128,7 +1128,7 @@ export(Line, Es, St0) ->
                                    add_warning(Line, W1, St2);
                                false ->
                                    W2 = {duplicated_export_by_domain_decl, NA},
-                                   case gb_sets:is_element_p(NA, DomDecls) of
+                                   case gb_sets:is_element_p(NA, Domain) of
                                        false -> St2;
                                        true  -> add_warning(Line, W2, St2)
                                    end
@@ -1154,7 +1154,7 @@ domain_decl_check(Line, D, St0) ->
     case gb_sets:is_element(D, St0#lint.locals) of %% Function exists?
         false -> add_error(Line, {undefined_function, D}, St0);
         true  ->
-            %% Function domain already declared
+            %% Function domain already declared?
             St1 = case gb_sets:is_element(St0#lint.domains) of
                       false -> St0;
                       true -> add_error(Line, {duplicated_domain_decl, D}, St0)
