@@ -122,7 +122,6 @@ value_option(Flag, Default, On, OnVal, Off, OffVal, Opts) ->
 	       callbacks = dict:new()   :: dict(),      %Callback types
 	       types = dict:new()	:: dict(),	%Type definitions
 	       exp_types=gb_sets:empty():: gb_set(),	%Exported types
-               mod_domain :: public | restricted | private,
                public_decls = dict:new() :: dict(),
                restricted_decls = dict:new() :: dict(),
                private_decls = dict:new() :: dict()
@@ -710,8 +709,6 @@ attribute_state({attribute,L,Domain,Fs}, St) when Domain =:= public;
                                                   Domain =:= restricted;
                                                   Domain =:= private ->
     domain_decl(Domain, L, Fs, St);
-attribute_state({attribute,L,domain,Domain}, St) ->
-    domain_decl(Domain, L, St);
 attribute_state({attribute,_L,_Other,_Val}, St) -> % Ignore others
     St;
 attribute_state(Form, St) ->
@@ -805,8 +802,7 @@ post_traversal_check(Forms, St0) ->
     StD = check_on_load(StC),
     StE = check_unused_records(Forms, StD),
     StF = check_local_opaque_types(StE),
-    StG = check_domain_declarations(StF),
-    check_callback_information(StG).
+    check_callback_information(StF).
 
 %% check_behaviour(State0) -> State
 %% Check that the behaviour attribute is valid.
@@ -1151,15 +1147,6 @@ export(Line, Es, #lint{exports = Es0, called = Called} = St0) ->
               {Es0,Called,St0}, Es),
     St1#lint{exports = Es1, called = C1}.
 
-domain_decl(Domain, Line, #lint{mod_domain = undefined} = St) ->
-    case is_domain_p(Domain) of
-        true  -> St#lint{mod_domain = Domain};
-        false -> add_error(Line, {bad_domain_decl, Domain}, St)
-    end;
-domain_decl(_Domain, Line, St) ->
-    add_error(Line, duplicated_domain_decl, St).
-
-
 domain_decl(Domain, Line, Ds, St0) when Domain =:= public;
                                         Domain =:= restricted;
                                         Domain =:= private ->
@@ -1171,11 +1158,6 @@ domain_decl(Domain, Line, Ds, St0) when Domain =:= public;
     add_domain_decl(Domain, Line, Ds, St);
 domain_decl(Domain, Line, _Ds, St) ->
     add_error(Line, {bad_domain_decl, Domain}, St).
-
-is_domain_p(public)     -> true;
-is_domain_p(restricted) -> true;
-is_domain_p(private)    -> true;
-is_domain_p(_)          -> false.
 
 add_domain_decl(public, Line, D, #lint{public_decls = Fs} = St) ->
     St#lint{public_decls = add_domain_decl(Line, D, Fs)};
@@ -2911,28 +2893,6 @@ check_local_opaque_types(St) ->
                 end
         end,
     dict:fold(FoldFun, St, Ts).
-
-check_domain_declarations(#lint{mod_domain       = undefined} = St) -> St;
-check_domain_declarations(#lint{mod_domain       = public,
-                                public_decls     = Decls} = St) ->
-    check_redundant_domain_decls(public, Decls, St);
-check_domain_declarations(#lint{mod_domain       = restricted,
-                                restricted_decls = Decls} = St) ->
-    check_redundant_domain_decls(restricted, Decls, St);
-check_domain_declarations(#lint{mod_domain       = private,
-                                private_decls    = Decls} = St) ->
-    check_redundant_domain_decls(private, Decls, St).
-
-check_redundant_domain_decls(Domain, Decls, St) ->
-    case dict:size(Decls) > 0 of
-        true ->
-            Lines   = lists:usort([L || {_Decl, L} <- dict:to_list(Decls)]),
-            Warn    = {redundant_domain_decl, Domain},
-            AddWarn = fun(Line, AccSt) -> add_warning(Line, Warn, AccSt) end,
-            lists:foldl(AddWarn, St, Lines);
-        false -> St
-    end.
-
 
 %% icrt_clauses(Clauses, In, ImportVarTable, State) ->
 %%      {NewVts,State}.

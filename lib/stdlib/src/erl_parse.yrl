@@ -696,14 +696,6 @@ build_attribute({atom,La,file}, Val) ->
 	    {attribute,La,file,{Name,Line}};
 	_Other -> error_bad_decl(La, file)
     end;
-build_attribute({atom,La,domain}, Val) ->
-    case Val of
-        [{atom, _, Domain}] when Domain =:= public;
-                                 Domain =:= restricted;
-                                 Domain =:= protected ->
-            {attribute,La,domain,Domain};
-	_Other -> error_bad_decl(La, domain)
-    end;
 build_attribute({atom,La,Domain}, Val) when Domain =:= public;
                                             Domain =:= restricted;
                                             Domain =:= private ->

@@ -82,7 +82,6 @@ format_return(S, DomainInfo) ->
     {ok, M, {DefAt, LCallAt, XCallAt, LC, XC, X, Attrs, Depr, DomainInfo}, U}.
 
 domain_info(Attrs, #xrefr{module = M, x = X}) ->
-    ModDomain    = domain_from_attrs(Attrs),
     PublicFs     = [{M, module_info, 0}, {M, module_info, 1}] ++
                    lists:append([fas2mfas(M, Fs) || {public, Fs} <- Attrs]),
     RestrictedFs = lists:append([fas2mfas(M, Fs) || {restricted, Fs} <- Attrs]),
@@ -91,26 +90,11 @@ domain_info(Attrs, #xrefr{module = M, x = X}) ->
     XSet          = gb_sets:from_list(X),
     DeclaredFsSet = gb_sets:from_list(PublicFs ++ RestrictedFs ++ PrivateFs),
     UndeclaredFs  = gb_sets:to_list(gb_sets:subtract(XSet, DeclaredFsSet)),
-    case ModDomain of
-        public     -> {PublicFs ++ UndeclaredFs, RestrictedFs, PrivateFs};
-        restricted -> {PublicFs, RestrictedFs ++ UndeclaredFs, PrivateFs};
-        private    -> {PublicFs, RestrictedFs, PrivateFs ++ UndeclaredFs}
-    end.
+    {PublicFs, RestrictedFs ++ UndeclaredFs, PrivateFs}.
 
 fas2mfas(M, Fas) -> [{M, F, A} || {F, A} <- Fas].
 
-domain_from_attrs(Attrs) ->
-    case lists:keyfind(domain, 1, Attrs) of
-        {domain, [Domain]} when Domain =:= public;
-                                Domain =:= restricted;
-                                Domain =:= private ->
-            Domain;
-        false ->
-            restricted
-    end.
-
-forms([F | Fs], S) -> forms(Fs, form(F, S));
-forms([], S)       -> S.
+forms(Fs, S) -> lists:foldl(fun(F, St) -> form(F, St) end, S0).
 
 form({attribute, Line, xref, Calls}, S) -> % experimental
     #xrefr{module = M, function = Fun,
