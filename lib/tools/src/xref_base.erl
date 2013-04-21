@@ -900,9 +900,9 @@ do_add_module(S, M, XMod, Unres0, Data) when S#xref.mode =:= functions ->
     %% Local and exported functions with no definitions are removed.
     L = difference(DefinedFuns, X1),
     X = difference(DefinedFuns, L),
-    PubX   = intersection(xref_utils:xset(Public,     FT), X),
-    RestrX = intersection(xref_utils:xset(Restricted, FT), X),
-    PrivX  = intersection(xref_utils:xset(Private,    FT), X),
+    XPub   = intersection(xref_utils:xset(Public,     FT), X),
+    XRestr = intersection(xref_utils:xset(Restricted, FT), X),
+    XPriv  = intersection(xref_utils:xset(Private,    FT), X),
     XC = union(XC1, AXC),
     LC = union(LC1, ALC),
 
@@ -914,9 +914,9 @@ do_add_module(S, M, XMod, Unres0, Data) when S#xref.mode =:= functions ->
     {EE, ECallAt} =
 	xref_utils:subprocess(Fun, [link, {min_heap_size,100000}]),
 
-    [DefAt2,L2,X2,PubX2,RestrX2,PrivX2,LCallAt2,XCallAt2,CallAt2,LC2,XC2,EE2,
+    [DefAt2,L2,X2,XPub2,XRestr2,XPriv2,LCallAt2,XCallAt2,CallAt2,LC2,XC2,EE2,
      ECallAt2,DF2,DF_12,DF_22,DF_32] =
-	pack([DefAt,L,X,PubX,RestrX,PrivX,LCallAt,XCallAt,CallAt,LC,XC,EE,
+	pack([DefAt,L,X,XPub,XRestr,XPriv,LCallAt,XCallAt,CallAt,LC,XC,EE,
               ECallAt,DF1,DF_11,DF_21,DF_31]),
 
     %% Foo = [DefAt2,L2,X2,LCallAt2,XCallAt2,CallAt2,LC2,XC2,EE2,ECallAt2,
@@ -928,7 +928,7 @@ do_add_module(S, M, XMod, Unres0, Data) when S#xref.mode =:= functions ->
     LPredefined = predefined_funs(LU),
 
     MS = xref_utils:xset(M, atom),
-    T = from_sets({MS,DefAt2,L2,X2,PubX2,RestrX2,PrivX2,LCallAt2,XCallAt2,
+    T = from_sets({MS,DefAt2,L2,X2,XPub2,XRestr2,XPriv2,LCallAt2,XCallAt2,
 		   CallAt2,LC2,XC2,LU,EE2,ECallAt2,Unres,LPredefined,
                    DF2,DF_12,DF_22,DF_32}),
 
