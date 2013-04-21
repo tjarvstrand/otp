@@ -82,8 +82,7 @@ format_return(S, DomainInfo) ->
     {ok, M, {DefAt, LCallAt, XCallAt, LC, XC, X, Attrs, Depr, DomainInfo}, U}.
 
 domain_info(Attrs, #xrefr{module = M, x = X}) ->
-    PublicFs     = [{M, module_info, 0}, {M, module_info, 1}] ++
-                   lists:append([fas2mfas(M, Fs) || {public, Fs} <- Attrs]),
+    PublicFs     = lists:append([fas2mfas(M, Fs) || {public,     Fs} <- Attrs]),
     RestrictedFs = lists:append([fas2mfas(M, Fs) || {restricted, Fs} <- Attrs]),
     PrivateFs    = lists:append([fas2mfas(M, Fs) || {private,    Fs} <- Attrs]),
 
@@ -94,7 +93,7 @@ domain_info(Attrs, #xrefr{module = M, x = X}) ->
 
 fas2mfas(M, Fas) -> [{M, F, A} || {F, A} <- Fas].
 
-forms(Fs, S) -> lists:foldl(fun(F, St) -> form(F, St) end, S0).
+forms(Fs, S) -> lists:foldl(fun(F, St) -> form(F, St) end, S).
 
 form({attribute, Line, xref, Calls}, S) -> % experimental
     #xrefr{module = M, function = Fun,
