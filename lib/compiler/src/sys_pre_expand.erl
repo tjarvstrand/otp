@@ -74,21 +74,30 @@ module(Fs0, Opts0) ->
     %% Expand the functions.
     {Tfs,St1} = forms(Fs, define_functions(Fs, St0)),
     %% Get the correct list of exported functions.
-    Exports = module_exports(St1),
+    Exports = module_exports(St1, Opts),
     %% Generate all functions from stored info.
     {Ats,St3} = module_attrs(St1#expand{exports = Exports}),
     {Mfs,St4} = module_predef_funcs(St3),
     {St4#expand.module, St4#expand.exports, Ats ++ Tfs ++ Mfs,
      St4#expand.compile}.
 
-module_exports(St) ->
+module_exports(St, Opts) ->
     case member(export_all, St#expand.compile) of
         true -> gb_sets:to_list(St#expand.defined);
         false ->
-            Add = [Fs || {Lvl, _, Fs} <- St#expand.attributes,
-                         member(Lvl, [public, restricted, private])],
-            lists:usort(St#expand.exports ++ lists:append(Add))
+            case domain_info_p(Opts) of
+                true ->
+                    Add = [Fs || {Lvl, _, Fs} <- St#expand.attributes,
+                                 member(Lvl, [public, restricted, private])],
+                    lists:usort(St#expand.exports ++ lists:append(Add));
+                false ->
+                    St#expand.exports
+            end
     end.
+
+domain_info_p(Opts) ->
+    lists:member(domain_info, Opts) orelse
+        lists:keymember(default_domain, 1, Opts).
 
 compiler_options(Forms) ->
     lists:flatten([C || {attribute,_,compile,C} <- Forms]).

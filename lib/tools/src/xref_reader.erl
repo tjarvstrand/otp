@@ -82,18 +82,43 @@ format_return(S, DomainInfo) ->
     {ok, M, {DefAt, LCallAt, XCallAt, LC, XC, X, Attrs, Depr, DomainInfo}, U}.
 
 domain_info(Attrs, #xrefr{module = M, x = X}) ->
-    PublicFs     = lists:append([fas2mfas(M, Fs) || {public,     Fs} <- Attrs]),
-    RestrictedFs = lists:append([fas2mfas(M, Fs) || {restricted, Fs} <- Attrs]),
-    PrivateFs    = lists:append([fas2mfas(M, Fs) || {private,    Fs} <- Attrs]),
+    case read_domain_info_p(Attrs) of
+        false -> {X, [], []};
+        true  ->
+            Public     = domain_mfas(Attrs, M, public),
+            Restricted = domain_mfas(Attrs, M, restricted),
+            Private    = domain_mfas(Attrs, M, private),
 
-    XSet          = gb_sets:from_list(X),
-    DeclaredFsSet = gb_sets:from_list(PublicFs ++ RestrictedFs ++ PrivateFs),
-    UndeclaredFs  = gb_sets:to_list(gb_sets:subtract(XSet, DeclaredFsSet)),
-    {PublicFs, RestrictedFs ++ UndeclaredFs, PrivateFs}.
+            XSet        = gb_sets:from_list(X),
+            DeclaredSet = gb_sets:from_list(Public ++ Restricted ++ Private),
+            Undeclared  = gb_sets:to_list(gb_sets:subtract(XSet, DeclaredSet)),
+            case default_domain(Attrs) of
+                public     -> {Public ++ Undeclared, Restricted, Private};
+                restricted -> {Public, Restricted ++ Undeclared, Private};
+                private    -> {Public, Restricted, Private ++ Undeclared}
+            end
+    end.
+
+read_domain_info_p(Attrs) ->
+    lists:member(domain_info, Attrs) orelse
+        lists:keymember(default_domain, 1, Attrs).
+
+default_domain(Attrs) ->
+    case lists:keyfind(default_domain, 1, Attrs) of
+        {default_domain, Domain} when Domain =:= public;
+                                      Domain =:= restricted;
+                                      Domain =:= private ->
+            Domain;
+        false ->
+            restricted
+    end.
+
+domain_mfas(Attrs, M, Dom0) ->
+    lists:append([fas2mfas(M, Fs) || {Dom, Fs} <- Attrs, Dom =:= Dom0]).
 
 fas2mfas(M, Fas) -> [{M, F, A} || {F, A} <- Fas].
 
-forms(Fs, S) -> lists:foldl(fun(F, St) -> form(F, St) end, S).
+forms(Fs, S) -> lists:foldl(fun(F, St) -> form(F, St) end, S, Fs).
 
 form({attribute, Line, xref, Calls}, S) -> % experimental
     #xrefr{module = M, function = Fun,

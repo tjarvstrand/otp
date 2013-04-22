@@ -702,11 +702,18 @@ attribute_state({attribute,L,on_load,Val}, St) ->
 attribute_state({attribute,L,Domain,Fs}, St) when Domain =:= public;
                                                   Domain =:= restricted;
                                                   Domain =:= private ->
-    domain_decl(Domain, L, Fs, St);
+    case domain_info_p(St) of
+        true  -> domain_decl(Domain, L, Fs, St);
+        false -> St
+    end;
 attribute_state({attribute,_L,_Other,_Val}, St) -> % Ignore others
     St;
 attribute_state(Form, St) ->
     function_state(Form, St#lint{state=function}).
+
+domain_info_p(#lint{compile = Opts}) ->
+    lists:member(domain_info, Opts) orelse
+        lists:keymember(default_domain, 1, Opts).
 
 %% function_state(Form, State) ->
 %%      State'
@@ -1128,7 +1135,7 @@ export(Line, Es, St0) ->
                                    add_warning(Line, W1, St2);
                                false ->
                                    W2 = {duplicated_export_by_domain_decl, NA},
-                                   case gb_sets:is_element_p(NA, Domain) of
+                                   case gb_sets:is_element(NA, Domain) of
                                        false -> St2;
                                        true  -> add_warning(Line, W2, St2)
                                    end
@@ -1155,7 +1162,7 @@ domain_decl_check(Line, D, St0) ->
         false -> add_error(Line, {undefined_function, D}, St0);
         true  ->
             %% Function domain already declared?
-            St1 = case gb_sets:is_element(St0#lint.domains) of
+            St1 = case gb_sets:is_element(D, St0#lint.domains) of
                       false -> St0;
                       true -> add_error(Line, {duplicated_domain_decl, D}, St0)
                   end,
