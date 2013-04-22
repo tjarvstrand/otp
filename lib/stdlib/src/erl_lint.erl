@@ -702,7 +702,7 @@ attribute_state({attribute,L,on_load,Val}, St) ->
 attribute_state({attribute,L,Domain,Fs}, St) when Domain =:= public;
                                                   Domain =:= restricted;
                                                   Domain =:= private ->
-    case domain_info_p(St) of
+    case use_domains_p(St) of
         true  -> domain_decl(Domain, L, Fs, St);
         false -> St
     end;
@@ -711,8 +711,8 @@ attribute_state({attribute,_L,_Other,_Val}, St) -> % Ignore others
 attribute_state(Form, St) ->
     function_state(Form, St#lint{state=function}).
 
-domain_info_p(#lint{compile = Opts}) ->
-    lists:member(domain_info, Opts) orelse
+use_domains_p(#lint{compile = Opts}) ->
+    lists:member(domains, Opts) orelse
         lists:keymember(default_domain, 1, Opts).
 
 %% function_state(Form, State) ->

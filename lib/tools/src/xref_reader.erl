@@ -82,7 +82,7 @@ format_return(S, DomainInfo) ->
     {ok, M, {DefAt, LCallAt, XCallAt, LC, XC, X, Attrs, Depr, DomainInfo}, U}.
 
 domain_info(Attrs, #xrefr{module = M, x = X}) ->
-    case read_domain_info_p(Attrs) of
+    case use_domains_p(Attrs) of
         false -> {X, [], []};
         true  ->
             Public     = domain_mfas(Attrs, M, public),
@@ -99,8 +99,8 @@ domain_info(Attrs, #xrefr{module = M, x = X}) ->
             end
     end.
 
-read_domain_info_p(Attrs) ->
-    lists:member(domain_info, Attrs) orelse
+use_domains_p(Attrs) ->
+    lists:member(domains, Attrs) orelse
         lists:keymember(default_domain, 1, Attrs).
 
 default_domain(Attrs) ->

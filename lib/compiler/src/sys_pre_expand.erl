@@ -85,7 +85,7 @@ module_exports(St, Opts) ->
     case member(export_all, St#expand.compile) of
         true -> gb_sets:to_list(St#expand.defined);
         false ->
-            case domain_info_p(Opts) of
+            case use_domains_p(Opts) of
                 true ->
                     Add = [Fs || {Lvl, _, Fs} <- St#expand.attributes,
                                  member(Lvl, [public, restricted, private])],
@@ -95,8 +95,8 @@ module_exports(St, Opts) ->
             end
     end.
 
-domain_info_p(Opts) ->
-    lists:member(domain_info, Opts) orelse
+use_domains_p(Opts) ->
+    lists:member(domains, Opts) orelse
         lists:keymember(default_domain, 1, Opts).
 
 compiler_options(Forms) ->
