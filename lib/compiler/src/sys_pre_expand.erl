@@ -45,7 +45,8 @@
                  arity=[],                      %Arity for current function
                  fcount=0,                      %Local fun count
                  bitdefault,
-                 bittypes
+                 bittypes,
+                 export_domains=[]
                 }).
 
 %% module(Forms, CompileOptions)
@@ -74,30 +75,15 @@ module(Fs0, Opts0) ->
     %% Expand the functions.
     {Tfs,St1} = forms(Fs, define_functions(Fs, St0)),
     %% Get the correct list of exported functions.
-    Exports = module_exports(St1, Opts),
+    Exports = case member(export_all, St1#expand.compile) of
+                  true -> gb_sets:to_list(St1#expand.defined);
+                  false -> St1#expand.exports
+              end,
     %% Generate all functions from stored info.
     {Ats,St3} = module_attrs(St1#expand{exports = Exports}),
     {Mfs,St4} = module_predef_funcs(St3),
     {St4#expand.module, St4#expand.exports, Ats ++ Tfs ++ Mfs,
      St4#expand.compile}.
-
-module_exports(St, Opts) ->
-    case member(export_all, St#expand.compile) of
-        true -> gb_sets:to_list(St#expand.defined);
-        false ->
-            case use_domains_p(Opts) of
-                true ->
-                    Add = [Fs || {Lvl, _, Fs} <- St#expand.attributes,
-                                 member(Lvl, [public, restricted, private])],
-                    lists:usort(St#expand.exports ++ lists:append(Add));
-                false ->
-                    St#expand.exports
-            end
-    end.
-
-use_domains_p(Opts) ->
-    lists:member(domains, Opts) orelse
-        lists:keymember(default_domain, 1, Opts).
 
 compiler_options(Forms) ->
     lists:flatten([C || {attribute,_,compile,C} <- Forms]).
@@ -184,6 +170,9 @@ forms([], St) -> {[],St}.
 attribute(module, Module, _L, St) ->
     true = is_atom(Module),
     St#expand{module=Module};
+attribute(export, {_Domain, Es} = Val, L, #expand{attributes = Attrs} = St) ->
+    %% Do the same this as for a normal export, but also add an attribute.
+    attribute(export, Es, L, St#expand{attributes=Attrs ++ [{domain,L,[Val]}]});
 attribute(export, Es, _L, St) ->
     St#expand{exports=union(from_list(Es), St#expand.exports)};
 attribute(import, Is, _L, St) ->

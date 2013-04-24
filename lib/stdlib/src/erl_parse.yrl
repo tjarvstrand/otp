@@ -674,6 +674,8 @@ build_attribute({atom,La,module}, Val) ->
     end;
 build_attribute({atom,La,export}, Val) ->
     case Val of
+        [{atom, _, Domain}, ExpList] ->
+            {attribute, La, export, {Domain, farity_list(ExpList)}};
 	[ExpList] ->
 	    {attribute,La,export,farity_list(ExpList)};
 	_Other -> error_bad_decl(La, export)
@@ -695,13 +697,6 @@ build_attribute({atom,La,file}, Val) ->
 	[{string,_Ln,Name},{integer,_Ll,Line}] ->
 	    {attribute,La,file,{Name,Line}};
 	_Other -> error_bad_decl(La, file)
-    end;
-build_attribute({atom,La,Domain}, Val) when Domain =:= public;
-                                            Domain =:= restricted;
-                                            Domain =:= private ->
-    case Val of
-	[Fs]   -> {attribute,La,Domain,farity_list(Fs)};
-	_Other -> error_bad_decl(La, domain)
     end;
 build_attribute({atom,La,Attr}, Val) ->
     case Val of

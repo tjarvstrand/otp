@@ -121,8 +121,7 @@ value_option(Flag, Default, On, OnVal, Off, OffVal, Opts) ->
 	       specs = dict:new()	:: dict(),	%Type specifications
 	       callbacks = dict:new()   :: dict(),      %Callback types
 	       types = dict:new()	:: dict(),	%Type definitions
-	       exp_types=gb_sets:empty():: gb_set(),	%Exported types
-               domains=gb_sets:empty()  :: dict()
+	       exp_types=gb_sets:empty():: gb_set()	%Exported types
               }).
 
 -type lint_state() :: #lint{}.
@@ -183,12 +182,6 @@ format_error(export_all) ->
     "export_all flag enabled - all functions will be exported";
 format_error({duplicated_export, {F,A}}) ->
     io_lib:format("function ~w/~w already exported", [F,A]);
-format_error({duplicated_export_by_domain_decl, {F,A}}) ->
-    io_lib:format("function ~w/~w already exported by domain declaration", [F,A]);
-format_error({bad_domain_decl, D}) ->
-    io_lib:format("bad domain: ~w", [D]);
-format_error({duplicated_domain_decl, {F,A}}) ->
-    io_lib:format("redeclaring domain of ~w/~w", [F,A]);
 format_error({unused_import,{{F,A},M}}) ->
     io_lib:format("import ~w:~w/~w is unused", [M,F,A]);
 format_error({undefined_function,{F,A}}) ->
@@ -699,21 +692,10 @@ attribute_state({attribute,L,callback,{Fun,Types}}, St) ->
     callback_decl(L, Fun, Types, St);
 attribute_state({attribute,L,on_load,Val}, St) ->
     on_load(L, Val, St);
-attribute_state({attribute,L,Domain,Fs}, St) when Domain =:= public;
-                                                  Domain =:= restricted;
-                                                  Domain =:= private ->
-    case use_domains_p(St) of
-        true  -> domain_decl(Domain, L, Fs, St);
-        false -> St
-    end;
 attribute_state({attribute,_L,_Other,_Val}, St) -> % Ignore others
     St;
 attribute_state(Form, St) ->
     function_state(Form, St#lint{state=function}).
-
-use_domains_p(#lint{compile = Opts}) ->
-    lists:member(domains, Opts) orelse
-        lists:keymember(default_domain, 1, Opts).
 
 %% function_state(Form, State) ->
 %%      State'
@@ -987,8 +969,8 @@ check_unused_functions(Forms, St0) ->
             func_line_warning(unused_function, Bad, St1)
     end.
 
-initially_reached(#lint{exports=Exp, domains = Domain ,on_load=OnLoad}) ->
-    OnLoad ++ gb_sets:to_list(Exp) ++ gb_sets:to_list(Domain).
+initially_reached(#lint{exports=Exp,on_load=OnLoad}) ->
+    OnLoad ++ gb_sets:to_list(Exp).
 
 %% reached_functions(RootSet, CallRef) -> [ReachedFunc].
 %% reached_functions(RootSet, CallRef, [ReachedFunc]) -> [ReachedFunc].
@@ -1125,58 +1107,22 @@ check_callback_information(#lint{callbacks = Callbacks,
 -spec export(line(), [fa()], lint_state()) -> lint_state().
 %%  Mark functions as exported, also as called from the export line.
 
-export(Line, Es, St0) ->
-    #lint{exports = Es0, called = Called, domains = Domain} = St0,
+export(Line, {_Domain, Es}, St0) ->
+    export(Line, Es, St0);
+export(Line, Es, #lint{exports = Es0, called = Called} = St0) ->
     {Es1,C1,St1} =
         foldl(fun (NA, {E,C,St2}) ->
                       St = case gb_sets:is_element(NA, E) of
                                true ->
-                                   W1 = {duplicated_export, NA},
-                                   add_warning(Line, W1, St2);
+                                   Warn = {duplicated_export,NA},
+                                   add_warning(Line, Warn, St2);
                                false ->
-                                   W2 = {duplicated_export_by_domain_decl, NA},
-                                   case gb_sets:is_element(NA, Domain) of
-                                       false -> St2;
-                                       true  -> add_warning(Line, W2, St2)
-                                   end
+                                   St2
                            end,
                       {gb_sets:add_element(NA, E), [{NA,Line}|C], St}
               end,
               {Es0,Called,St0}, Es),
     St1#lint{exports = Es1, called = C1}.
-
-domain_decl(Domain, Line, Ds, St0) when Domain =:= public;
-                                        Domain =:= restricted;
-                                        Domain =:= private ->
-    St = foldl(fun ({M, A} = D, St1) when is_atom(M), is_integer(A), A >= 0 ->
-                       domain_decl_check(Line, D, St1);
-                   (D, St1) ->
-                       add_error(Line, {bad_domain_decl, D}, St1)
-               end, St0, Ds),
-    add_domain_decl(Ds, St);
-domain_decl(Domain, Line, _Ds, St) ->
-    add_error(Line, {bad_domain_decl, Domain}, St).
-
-domain_decl_check(Line, D, St0) ->
-    case gb_sets:is_element(D, St0#lint.locals) of %% Function exists?
-        false -> add_error(Line, {undefined_function, D}, St0);
-        true  ->
-            %% Function domain already declared?
-            St1 = case gb_sets:is_element(D, St0#lint.domains) of
-                      false -> St0;
-                      true -> add_error(Line, {duplicated_domain_decl, D}, St0)
-                  end,
-            %% Function also exported?
-            case gb_sets:is_element(D, St1#lint.exports) of
-                false -> St1;
-                true  -> add_warning(Line, {duplicated_export, D}, St1)
-            end
-    end.
-
-add_domain_decl(Decls0, St) ->
-    Decls = gb_sets:union(gb_sets:from_list(Decls0), St#lint.domains),
-    St#lint{domains = Decls}.
-
 
 -spec export_type(line(), [ta()], lint_state()) -> lint_state().
 %%  Mark types as exported; also mark them as used from the export line.
